@@ -38,6 +38,7 @@ namespace proc
 
 	void Scheduler::start_schedule()
 	{
+		printfGreen("start schedule\n");
 		Pcb *p;
 		Cpu *cpu = Cpu::get_cpu();
 		int priority;
@@ -72,7 +73,7 @@ namespace proc
 					// uint64 pa = (uint64)PTE2PA(mem::k_pagetable.kwalkaddr(sp).get_data());
 					// printf("sp: %p, kstack: %p,pa:%p\n", sp, p->_kstack,pa);
 
-					// printf( "sche proc %d, name: %s\n", p->_gid, p->_name );
+					printf( "sche proc %d, name: %s\n", p->_gid, p->_name );
 					swtch( cur_context, &p->_context );
 					// printf( "return from %d, name: %s\n", p->_gid, p->_name );
 					cpu->set_cur_proc( nullptr );
@@ -85,6 +86,7 @@ namespace proc
 
 	void Scheduler::yield()
 	{
+		printfCyan("yield\n");
 		Pcb *p = Cpu::get_cpu()->get_cur_proc();
 		p->_lock.acquire();
 		Cpu::get_cpu()->interrupt_off();
@@ -97,6 +99,7 @@ namespace proc
 
 	void Scheduler::call_sched()
 	{
+		printf("call_sched\n");
 		int intena;
 		Cpu * cpu = Cpu::get_cpu();
 		Pcb *p = cpu->get_cur_proc();

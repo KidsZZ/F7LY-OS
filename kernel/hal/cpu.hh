@@ -97,24 +97,24 @@ public:
         { 
                 if (_num_off > 0) {
                         _num_off--;
-                        // printfCyan("[interrupt_on] _num_off decreased to %d\n", _num_off);
+                        printfCyan("[interrupt_on] _num_off decreased to %d\n", _num_off);
                         if (_num_off == 0) {
-                                // printf("[interrupt_on] actually enabling interrupts\n");
+                                printf("[interrupt_on] actually enabling interrupts\n");
                                 _intr_on();
                         }
                 } else {
-                        printfRed("interrupt_on: warning - _num_off already 0\n");
+                        printfRed("[interrupt_on]: warning - _num_off already 0\n");
                 }
         }
         
         void interrupt_off() 
         { 
                 if (_num_off == 0) {
-                        // printfCyan("[interrupt_off] actually disabling interrupts\n");
+                        printfCyan("[interrupt_off] actually disabling interrupts\n");
                         _intr_off();
                 }
                 _num_off++;
-                // printfCyan("[interrupt_off]_num_off increased to %d\n", _num_off);
+                printfCyan("[interrupt_off]_num_off increased to %d\n", _num_off);
         }
         
         proc::Pcb *get_cur_proc() { return _cur_proc; }
