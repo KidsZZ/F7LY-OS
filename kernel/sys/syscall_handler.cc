@@ -187,13 +187,9 @@ namespace syscall
 
         if (sys_num != 64 && sys_num != 66)
         {
+            printf("---------- start ------------\n");
+            printfMagenta("[Pcb::get_open_file] pid: %d\n", p->_pid);
             printfGreen("[invoke_syscaller]sys_num: %d sys_name: %s\n", sys_num, _syscall_name[sys_num]);
-            printfBlue("[Pcb::get_open_file] pid: %d fd1, file: %p, _fl_cloexec: %p\n", p->_pid, (proc::Pcb *)proc::k_pm.get_cur_pcb()->_ofile[1], (proc::Pcb *)proc::k_pm.get_cur_pcb()->_ofile[1]->_fl_cloexec);
-            if (proc::k_pm.get_cur_pcb()->_ofile[10] != nullptr)
-            {
-                // 仅在fd10不为空时打印
-                printfBlue("[Pcb::get_open_file] fd10, file: %p, _fl_cloexec: %p\n", (proc::Pcb *)proc::k_pm.get_cur_pcb()->_ofile[10], (proc::Pcb *)proc::k_pm.get_cur_pcb()->_ofile[10]->_fl_cloexec);
-            }
         }
 
         if (sys_num >= max_syscall_funcs_num || sys_num < 0 || _syscall_funcs[sys_num] == nullptr)
@@ -212,6 +208,20 @@ namespace syscall
             // 调用对应的系统调用函数
             uint64 ret = (this->*_syscall_funcs[sys_num])();
             p->_trapframe->a0 = ret; // 设置返回值
+        }
+        if (sys_num != 64 && sys_num != 66)
+        {
+            proc::Pcb *cur_pcb = (proc::Pcb *)proc::k_pm.get_cur_pcb();
+            printfMagenta("[Pcb::get_open_file] pid: %d\n", cur_pcb->_pid);
+            for (int fd = 0; (uint64)fd < proc::max_open_files; fd++)
+            {
+                if (cur_pcb->_ofile[fd] != nullptr)
+                {
+                    printfBlue("[Pcb::get_open_file] fd: [%d], file: %p, _fl_cloexec: %d\n",
+                               fd, cur_pcb->_ofile[fd], cur_pcb->_ofile[fd]->_fl_cloexec);
+                }
+            }
+            printf("----------  end ------------\n");
         }
     }
 
@@ -413,12 +423,15 @@ namespace syscall
         proc::Pcb *p = proc::k_pm.get_cur_pcb();
         fs::file *f;
         int fd;
-        [[maybe_unused]] int oldfd = 0;
+        int oldfd = 0;
 
         if (_arg_fd(0, &oldfd, &f) < 0)
             return -1;
         if (_arg_int(1, fd) < 0)
             return -1;
+
+        printfBlue("[SyscallHandler::sys_dup3] oldfd: %d, fd: %d\n", oldfd, fd);
+
         if (fd == oldfd)
             return fd;
         if (proc::k_pm.alloc_fd(p, f, fd) < 0)
@@ -432,7 +445,7 @@ namespace syscall
         fs::file *f;
         uint64 buf;
         int n;
-        [[maybe_unused]] int fd = -1;
+        int fd = -1;
 
         if (_arg_fd(0, &fd, &f) < 0)
             return -1;
@@ -726,7 +739,7 @@ namespace syscall
         if (mem::k_vmm.copy_str_in(*pt, path, path_addr, 100) < 0)
             return -1;
         int res = proc::k_pm.open(dir_fd, path, flags);
-        printfBlue("openat return fd is %d\n", res);
+        printfRed("openat opening file: %s return fd is %d\n", path.c_str(), res);
         return res;
     }
     uint64 SyscallHandler::sys_write()
@@ -1649,16 +1662,17 @@ namespace syscall
     uint64 SyscallHandler::sys_fcntl()
     {
         proc::Pcb *p = proc::k_pm.get_cur_pcb();
+        int op_fd;
         fs::file *f = nullptr;
         int op;
         ulong arg;
         int retfd = -1;
 
-        if (_arg_fd(0, nullptr, &f) < 0)
+        if (_arg_fd(0, &op_fd, &f) < 0)
             return -1;
         if (_arg_int(1, op) < 0)
             return -2;
-        // printfYellow("file fd: %p, op: %d\n", f, op);
+        printfYellow("file fd: %d, op: %d\n", op_fd, op);
         switch (op)
         {
         case F_SETFD:
@@ -1684,12 +1698,16 @@ namespace syscall
         case F_DUPFD_CLOEXEC:
             if (_arg_addr(2, arg) < 0)
                 return -3;
+            // printfYellow("F_DUPFD_CLOEXEC, arg: %d\n", arg);
             for (int i = (int)arg; i < (int)proc::max_open_files; ++i)
             {
-                if ((retfd = proc::k_pm.alloc_fd(p, f, i)) == i)
-                {
-                    f->refcnt++;
-                    break;
+                if (p->_ofile[i] == nullptr)
+                { // 检查fd是否空闲
+                    if ((retfd = proc::k_pm.alloc_fd(p, f, i)) == i)
+                    {
+                        f->refcnt++;
+                        break;
+                    }
                 }
             }
             p->get_open_file(retfd)->_fl_cloexec = true;
@@ -1927,6 +1945,29 @@ namespace syscall
         return ret;
     }
 
+    /**
+     * @brief 在两个文件描述符之间传输数据的系统调用处理函数
+     *
+     * 该函数实现了sendfile系统调用，用于在两个文件描述符之间高效地传输数据。
+     * 支持从输入文件描述符读取数据并写入到输出文件描述符，可以处理普通文件和管道文件。
+     *
+     * @param 参数0: 输出文件描述符
+     * @param 参数1: 输入文件描述符
+     * @param 参数2: 偏移量指针的用户空间地址（可选，为0时使用文件当前偏移量）
+     * @param 参数3: 要传输的字节数
+     *
+     * @return int64 成功时返回实际写入的字节数，失败时返回负数错误码：
+     *         -1: 获取输出文件描述符失败
+     *         -2: 获取输入文件描述符失败
+     *         -3: 获取偏移量地址参数失败
+     *         -4: 获取传输字节数参数失败
+     *         -5: 内存分配失败
+     *
+     * @note 函数会根据输出文件类型选择不同的写入方式：
+     *       - 管道文件：使用内核写入接口
+     *       - 普通文件：使用标准写入接口
+     * @note 如果提供了偏移量指针，函数会更新其值为新的偏移量
+     */
     uint64 SyscallHandler::sys_sendfile()
     {
         int in_fd, out_fd;
@@ -1950,6 +1991,7 @@ namespace syscall
         if (_arg_addr(3, count) < 0)
             return -4;
 
+        printfCyan("[SyscallHandler::sys_sendfile] in_fd: %d, out_fd: %d count: %d\n", in_fd, out_fd, count);
         /// @todo sendfile
 
         ulong start_off = in_f->get_file_offset();
@@ -1973,6 +2015,8 @@ namespace syscall
 
         if (p_off != nullptr)
             *p_off += writecnt;
+
+        printfRed("111111111111111111111111\n");
 
         return writecnt;
     }

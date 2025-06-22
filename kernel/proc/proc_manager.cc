@@ -596,7 +596,7 @@ namespace proc
     {
         int fd;
 
-        for (fd = 3; fd < (int)max_open_files; fd++)
+        for (fd = 0; fd < (int)max_open_files; fd++)
         {
             if (p->_ofile[fd] == nullptr)
             {
@@ -1489,7 +1489,7 @@ namespace proc
         else
             ab_path = proc->_cwd_name + path; // 相对路径，添加当前工作目录前缀
 
-        // printfCyan("execve file : %s\n", ab_path.c_str());
+        printfCyan("execve file : %s\n", ab_path.c_str());
 
         // 解析路径并查找文件
         fs::Path path_resolver(ab_path);
@@ -2027,7 +2027,7 @@ namespace proc
         // printf("execve: new process size: %d, new pagetable: %p\n", proc->_sz, proc->_pt);
         k_pm.proc_freepagetable(old_pt, old_sz);
 
-        printf("execve succeed, new process size: %d\n", proc->_sz);
+        // printf("execve succeed, new process size: %d\n", proc->_sz);
 
         return argc; // 返回参数个数，表示成功执行
     }

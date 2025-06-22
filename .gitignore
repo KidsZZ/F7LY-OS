@@ -30,3 +30,6 @@ busybox_musl_unstripped.asm
 temp.asm
 disasm_initcode.asm
 user/initcode-la
+output-la.txt
+output-rv.txt
+mount-rv.sh
