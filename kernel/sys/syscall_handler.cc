@@ -186,7 +186,15 @@ namespace syscall
         uint64 sys_num = p->get_trapframe()->a7; // 获取系统调用号
 
         if (sys_num != 64 && sys_num != 66)
+        {
             printfGreen("[invoke_syscaller]sys_num: %d sys_name: %s\n", sys_num, _syscall_name[sys_num]);
+            printfBlue("[Pcb::get_open_file] pid: %d fd1, file: %p, _fl_cloexec: %p\n", p->_pid, (proc::Pcb *)proc::k_pm.get_cur_pcb()->_ofile[1], (proc::Pcb *)proc::k_pm.get_cur_pcb()->_ofile[1]->_fl_cloexec);
+            if (proc::k_pm.get_cur_pcb()->_ofile[10] != nullptr)
+            {
+                // 仅在fd10不为空时打印
+                printfBlue("[Pcb::get_open_file] fd10, file: %p, _fl_cloexec: %p\n", (proc::Pcb *)proc::k_pm.get_cur_pcb()->_ofile[10], (proc::Pcb *)proc::k_pm.get_cur_pcb()->_ofile[10]->_fl_cloexec);
+            }
+        }
 
         if (sys_num >= max_syscall_funcs_num || sys_num < 0 || _syscall_funcs[sys_num] == nullptr)
         {
@@ -718,7 +726,7 @@ namespace syscall
         if (mem::k_vmm.copy_str_in(*pt, path, path_addr, 100) < 0)
             return -1;
         int res = proc::k_pm.open(dir_fd, path, flags);
-        // printfBlue("openat return fd is %d", res);
+        printfBlue("openat return fd is %d\n", res);
         return res;
     }
     uint64 SyscallHandler::sys_write()
@@ -809,6 +817,7 @@ namespace syscall
         int fd;
         if (_arg_int(0, fd) < 0)
             return -1;
+        printfCyan("[SyscallHandler::sys_close] fd: %d\n", fd);
         return proc::k_pm.close(fd);
     }
     uint64 SyscallHandler::sys_mknod()
@@ -833,7 +842,14 @@ namespace syscall
         {
             panic("[SyscallHandler::sys_clone] flags must be SIGCHILD");
         }
-        return proc::k_pm.fork(stack);
+
+        uint64 child_pid = proc::k_pm.fork(stack);
+        printfYellow("[sys_clone] proc pid: %d, ppid: %d, name: %s child pid: %d\n",
+                     proc::k_pm.get_cur_pcb()->get_pid(),
+                     proc::k_pm.get_cur_pcb()->get_ppid(),
+                     proc::k_pm.get_cur_pcb()->get_name(),
+                     child_pid);
+        return child_pid;
     }
     uint64 SyscallHandler::sys_umount2()
     {
@@ -1142,7 +1158,7 @@ namespace syscall
     }
     uint64 SyscallHandler::sys_tkill()
     {
-       return 0;
+        return 0;
     }
     uint64 SyscallHandler::sys_tgkill()
     {

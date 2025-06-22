@@ -937,6 +937,7 @@ namespace proc
         u8 visit[num_process];
         memset((void *)visit, 0, sizeof visit);
         proc::Pcb *cp = get_cur_pcb();
+        printf("[exit_group] proc %s pid %d exiting group with status %d\n", cp->_name, cp->_pid, status);
 
         _wait_lock.acquire();
 
