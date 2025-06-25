@@ -119,6 +119,7 @@ namespace syscall
 
     enum SYS_clone
     {
-        SIGCHILD = 17
+        SIGCHILD = 17,
+		SIG_CLEARTID = 0x00200000
     };
 }

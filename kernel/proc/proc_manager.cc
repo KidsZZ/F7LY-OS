@@ -231,6 +231,7 @@ namespace proc
 
     void ProcessManager::freeproc(Pcb *p)
     {
+        printfRed("freeproc: freeing process %d\n", p->_pid);
         for (int i = 0; i < NVMA; ++i)
         {
             // printfBlue("freeproc: checking vma %d, addr: %p, len: %d,used:%d\n", i, p->_vm[i].addr, p->_vm[i].len,p->_vm[i].used);
@@ -287,6 +288,8 @@ namespace proc
         p->_killed = 0;
         p->_xstate = 0;
         p->_state = ProcState::UNUSED;
+        p->wakeup2addtimes = 0;
+
         // printf("freeproc: freeing process %d\n", p->_pid);
         for (int i = 0; i < (int)max_open_files; ++i)
         {
@@ -303,7 +306,7 @@ namespace proc
                 p->_ofile[i] = nullptr;
             }
         }
-        for (int i = 0; i < ipc::signal::SIGRTMAX; ++i)
+        for (int i = 0; i <= ipc::signal::SIGRTMAX; ++i)
         {
             if (p->_sigactions[i] != nullptr)
             {
@@ -489,6 +492,41 @@ namespace proc
         p->_killed = 1;
         p->_lock.release();
     }
+
+    int ProcessManager::kill_signal(int pid, int sig)
+    {
+        Pcb *p;
+        for (p = k_proc_pool; p < &k_proc_pool[num_process]; p++)
+        {
+            p->_lock.acquire();
+            if (p->_pid == pid || (p->_parent != NULL && p->_parent->_pid == pid))
+            {
+                p->_signal = sig;
+                p->_lock.release();
+                return 0;
+            }
+            p->_lock.release();
+        }
+        return -1;
+    }
+
+    int ProcessManager::tkill(int pid, int sig)
+    {
+        Pcb *p;
+        for (p = k_proc_pool; p < &k_proc_pool[num_process]; p++)
+        {
+            p->_lock.acquire();
+            if (p->_pid == pid)
+            {
+                p->_signal = sig;
+                p->_lock.release();
+                return 0;
+            }
+            p->_lock.release();
+        }
+        return -1;
+    }
+
     // Kill the process with the given pid.
     // The victim won't exit until it tries to return
     // to user space (see usertrap() in trap.c).
@@ -633,6 +671,11 @@ namespace proc
             }
         }
         return -1;
+    }
+
+    int ProcessManager::clone(uint64 flags, void *stack, int *ptid, uint64 tls, int *ctid)
+    {
+        panic("clone: not implemented yet");
     }
 
     int ProcessManager::fork()
@@ -780,6 +823,7 @@ namespace proc
 
     int ProcessManager::wait4(int child_pid, uint64 addr, int option)
     {
+        printf("[wait4] child_pid: %d, addr: %p, option: %d\n", child_pid, (void *)addr, option);
         // copy from RUOK-os
         Pcb *p = k_pm.get_cur_pcb();
         int havekids, pid;
@@ -818,7 +862,7 @@ namespace proc
                     if (np->get_state() == ProcState::ZOMBIE)
                     {
                         pid = np->_pid;
-                        // printf("[wait4]: child->xstate: %d\n", np->_xstate);
+                        printf("[wait4]: removing child [%d], name: %s\n", pid, np->_name);
                         if (addr != 0 &&
                             mem::k_vmm.copy_out(p->_pt, addr, (const char *)&np->_xstate,
                                                 sizeof(np->_xstate)) < 0)
@@ -909,23 +953,38 @@ namespace proc
     /// @param state
     void ProcessManager::exit_proc(Pcb *p, int state)
     {
- 
+
         if (p == _init_proc)
             panic("init exiting"); // 保护机制：init 进程不能退出
         // log_info( "exit proc %d", p->_pid );
 
         _wait_lock.acquire();
+
         reparent(p); // 将 p 的所有子进程交给 init 进程收养
 
         if (p->_parent)
+        {
             wakeup(p->_parent); // 唤醒父进程（可能在 wait() 中阻塞）
+        }
+
+        if (p->_parent->_futex_addr)
+        {
+            printf("[exit_proc] proc %s pid [%d] exiting with state [%d], wakeup futex addr: %p\n", p->_name, p->_pid, state, p->_parent->_futex_addr);
+            wakeup2((uint64)p->_parent->_futex_addr, 1, 0, 0); // 唤醒父进程的 futex 地址
+        }
+
+        if (p->_parent)
+        {
+            printfRed("[exit_proc] proc %s pid [%d] exiting with state [%d], emit SIGCHLD to parent pid [%d]\n", p->_name, p->_pid, state, p->_parent->_pid);
+            p->_parent->_signal = ipc::signal::SIGCHLD; // 通知父进程有子进程退出
+        }
 
         p->_lock.acquire();
         p->_xstate = state << 8;       // 存储退出状态（通常高字节存状态）
         p->_state = ProcState::ZOMBIE; // 标记为 zombie，等待父进程回收
 
         _wait_lock.release();
-    //    printf("[exit_proc] proc %s pid %d exiting with state %d\n", p->_name, p->_pid, state);
+        //    printf("[exit_proc] proc %s pid %d exiting with state %d\n", p->_name, p->_pid, state);
         k_scheduler.call_sched(); // jump to schedular, never return
         panic("zombie exit");
     }
@@ -1044,6 +1103,7 @@ namespace proc
 
         for (p = k_proc_pool; p < &k_proc_pool[num_process]; p++)
         {
+            // p->_state != ProcState::UNUSED用于pipe_close时的错误
             if (p != k_pm.get_cur_pcb() && p->_state != ProcState::UNUSED)
             {
                 p->_lock.acquire();
@@ -1062,12 +1122,24 @@ namespace proc
         for (p = k_proc_pool; p < &k_proc_pool[num_process]; p++)
         {
             p->_lock.acquire();
-            if (p->_state == SLEEPING && (uint64)p->_futex_addr == uaddr)
+            if ((uint64)p->_futex_addr == uaddr)
             {
                 if (count1 < val)
                 {
-                    p->_state = RUNNING;
-                    p->_futex_addr = 0;
+                    if (p->_state == SLEEPING)
+                    {
+                        // TODO: 没写clone的权宜之计
+                        uint64 value = 0;
+                        printf("[wakeup2] copy out futex addr: %p\n", uaddr);
+                        mem::k_vmm.copy_out(p->_pt, uaddr, &value, sizeof(uint64));
+                        p->_state = RUNNABLE;
+                        // p->_futex_addr = 0;
+                        count1++;
+                    }else if (p->_state == RUNNABLE){
+                        p->wakeup2addtimes++;
+                        count1++;
+                    }
+
                     count1++;
                 }
                 else if (uaddr2 && count2 < val2)
@@ -1084,6 +1156,7 @@ namespace proc
             }
             p->_lock.release();
         }
+        printf("count1: %d, count2: %d\n", count1, count2);
         return count1;
     }
     int ProcessManager::mkdir(int dir_fd, eastl::string path, uint flags)
@@ -1127,11 +1200,11 @@ namespace proc
     {
         // enum OpenFlags : uint
         // {
-        // 	O_RDONLY	= 0x000U,
-        // 	O_WRONLY	= 0x001U,
-        // 	O_RDWR		= 0x002U,
-        // 	O_CREATE	= 0x040U,
-        // 	O_DIRECTORY = 0x020'0000U
+        //     O_RDONLY    = 0x000U,
+        //     O_WRONLY    = 0x001U,
+        //     O_RDWR        = 0x002U,
+        //     O_CREATE    = 0x040U,
+        //     O_DIRECTORY = 0x020'0000U
         // };
 
         Pcb *p = get_cur_pcb();
@@ -1195,17 +1268,17 @@ namespace proc
             fs::device_file *f = new fs::device_file(attrs, dev, dentry);
             return alloc_fd(p, f);
         } // else if( attrs.filetype == fs::FileTypes::FT_DIRECT)
-        // 	fs::directory *f = new fs::directory( attrs, dentry );
+        //     fs::directory *f = new fs::directory( attrs, dentry );
         else // 否则为普通文件，创建 normal_file 对象
         {
             fs::normal_file *f = new fs::normal_file(attrs, dentry);
             // log_info( "test normal file read" );
             // {
-            // 	fs::file *ff = ( fs::file * ) f;
-            // 	char buf[ 8 ];
-            // 	ff->read( ( ulong ) buf, 8 );
-            // 	buf[ 8 ] = 0;
-            // 	printf( "%s\n", buf );
+            //     fs::file *ff = ( fs::file * ) f;
+            //     char buf[ 8 ];
+            //     ff->read( ( ulong ) buf, 8 );
+            //     buf[ 8 ] = 0;
+            //     printf( "%s\n", buf );
             // }
             if (flags & O_APPEND)
                 f->setAppend();
@@ -2082,7 +2155,6 @@ namespace proc
             k_pm.proc_freepagetable(new_pt, new_sz);
             return -1;
         }
-
 
         // 步骤13: 保存程序名用于调试
         // 从路径中提取文件名

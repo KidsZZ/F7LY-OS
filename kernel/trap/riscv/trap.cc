@@ -173,7 +173,7 @@ void trap_manager::kerneltrap()
     // printf("timeslice: %d\n", timeslice);
     if (timeslice >= 5)
     {
-      // printfCyan("[kerneltrap]  yield here,p->addr:%x \n",Cpu::get_cpu()->get_cur_proc());
+      printfCyan("[kerneltrap]  yield here,p->addr:%x \n",Cpu::get_cpu()->get_cur_proc());
       proc::k_scheduler.yield();
       timeslice = 0;
       // print_fuckyou();
@@ -245,10 +245,11 @@ void trap_manager::usertrap()
     if (timeslice >= 5)
     {
       timeslice = 0;
-      // printf("yield in usertrap\n");
+      printf("yield in usertrap\n");
       proc::k_scheduler.yield();
     }
   }
+  proc::ipc::signal::handle_signal(); // 处理信号
   // printfMagenta("left usertrap\n");
   usertrapret();
 }

@@ -69,6 +69,7 @@ namespace proc
         int wakeup2(uint64 uaddr, int val, void *uaddr2, int val2);
         void exit_proc(Pcb *p, int state);
         void exit(int state);
+		int clone(uint64 flags, void* stack, int *ptid, uint64 tls, int* ctid);
         int fork(uint64 usp);
         int fork();
         void fork_ret();
@@ -98,7 +99,8 @@ namespace proc
         int get_cur_cpuid();
 
         // 信号相关
-        // int kill_signal(int pid, int sig);
+        int kill_signal(int pid, int sig);
+        int tkill(int tid, int sig);
 
     public:
         void kill_proc(Pcb *p) { p->_killed = 1; }

@@ -388,7 +388,10 @@ namespace syscall
             return -1;
         if (_arg_int(2, option) < 0)
             return -1;
-        return proc::k_pm.wait4(pid, wstatus_addr, 0);
+        int wait4_return = proc::k_pm.wait4(pid, wstatus_addr, 0);
+        printf("[SyscallHandler::sys_wait4] wait4_return: %d\n",
+               wait4_return);
+        return wait4_return;
     }
     uint64 SyscallHandler::sys_getppid()
     {
@@ -860,11 +863,17 @@ namespace syscall
         _arg_addr(3, tls);
         _arg_addr(4, ctid);
 
+		printfRed("[SyscallHandler::sys_clone] flags: %x, stack: %p, ptid: %p, tls: %p, ctid: %p\n",
+			   flags, (void *)stack, (void *)ptid, (void *)tls, (void *)ctid);
+
+
         if (flags != SIGCHILD && stack != 0) // TODO: to be cheched
         {
-            panic("[SyscallHandler::sys_clone] flags must be SIGCHILD， now flags is %x, now stack is %p\n", flags, stack);
+            // panic("[SyscallHandler::sys_clone] flags must be SIGCHILD， now flags is %x, now stack is %p\n", flags, stack);
         }
-        uint64 clone_pid = proc::k_pm.fork(stack);
+		uint64 clone_pid;
+		clone_pid = proc::k_pm.fork(stack);
+
         // printfRed("[SyscallHandler::sys_clone] pid: [%d] name: %s clone_pid: [%d]\n", proc::k_pm.get_cur_pcb()->_pid, proc::k_pm.get_cur_pcb()->_name, clone_pid);
         return clone_pid;
     }
@@ -1170,12 +1179,19 @@ namespace syscall
         int pid, sig;
         _arg_int(0, pid);
         _arg_int(1, sig);
-        // return proc::k_pm.kill_signal(pid, sig);
+        return proc::k_pm.kill_signal(pid, sig);
         return 0;
     }
     uint64 SyscallHandler::sys_tkill()
     {
-        return 0;
+        int tid, sig;
+        if (_arg_int(0, tid) < 0){
+            return -1;
+        }
+        if (_arg_int(1, sig) < 0){
+            return -1;
+        }
+        return proc::k_pm.tkill(tid, sig);
     }
     uint64 SyscallHandler::sys_tgkill()
     {
@@ -1244,11 +1260,15 @@ namespace syscall
         if (setaddr != 0)
             if (mem::k_vmm.copy_in(*pt, &set, setaddr, sizeof(signal::sigset_t)) < 0)
                 return -1;
+
+        if(signal::sigprocmask(how, &set, &old_set, sigsize)){
+            return -1;
+        }
         if (oldsetaddr != 0)
-            if (mem::k_vmm.copy_in(*pt, &old_set, oldsetaddr, sizeof(signal::sigset_t)) < 0)
+            if (mem::k_vmm.copy_out(*pt, oldsetaddr, &old_set, sizeof(signal::sigset_t)) < 0)
                 return -1;
 
-        return signal::sigprocmask(how, &set, &old_set, sigsize);
+        return 0;
     }
     uint64 SyscallHandler::sys_rt_sigtimedwait()
     {
@@ -2459,6 +2479,8 @@ namespace syscall
         }
 
         // printf("sys_futex: uaddr=%p, op=%d, val=%d, timeout=%p, uaddr2=%p, val3=%d\n",  uaddr, op, val, timeout_ptr, uaddr2, val3);
+		uint64 ctidpa = (uint64)proc::k_pm.get_cur_pcb()->get_pagetable()->walk_addr(uaddr);
+		printf("sys_futex: uaddr=%p, paddr=%p, op=%d, val=%d, timeout=%p, uaddr2=%p, val3=%d\n", uaddr, ctidpa, op, val, timeout_ptr, uaddr2, val3);
         switch (op)
         {
         case FUTEX_WAIT:

@@ -14,9 +14,16 @@ namespace proc
         Pcb *p = k_pm.get_cur_pcb();
 
         p->_chan = chan;
-        if (p->_futex_addr == 0)
-        {
+        // if (p->_futex_addr == 0)
+        // {
             p->_futex_addr = futex_addr;
+        // }
+        if(p->wakeup2addtimes > 0){
+            p->wakeup2addtimes--;
+            int value = 0;
+            mem::k_vmm.copy_out(p->_pt, (uint64)futex_addr, &value, sizeof(uint64));
+            p->_futex_addr = 0;
+            return;
         }
         p->_state = SLEEPING;
 
@@ -34,23 +41,23 @@ namespace proc
         p->_lock.acquire();
         if (mem::k_vmm.copy_in(p->_pt, (char *)&current_val, uaddr, sizeof(int)))
         {
-                p->_lock.release();
-                return -1;
-        }
-
-        if (current_val != val)
-        {
-            // printf("%d %d\n", current_val, val);
             p->_lock.release();
             return -1;
         }
 
-        // printf("11111\n");
+        printf("[futex wait]uaddr: %p, current_val: %d, val: %d\n", (void *)uaddr, current_val, val);
+
+        if (current_val != val)
+        {
+            printfRed("[futex wait]curr: %d, val: %d\n", current_val, val);
+            p->_lock.release();
+            return -1;
+        }
 
         if (ts)
         {
             uint64 n;
-            n = (ts->tv_sec + 3) * tmm::qemu_fre+ (ts->tv_nsec * tmm::qemu_fre) / 1000000000;
+            n = (ts->tv_sec + 3) * tmm::qemu_fre + (ts->tv_nsec * tmm::qemu_fre) / 1000000000;
             uint64 timestamp;
             timestamp = rdtime();
             while (rdtime() - timestamp < n)
@@ -60,7 +67,7 @@ namespace proc
                     p->_lock.release();
                     return -1;
                 }
-                futex_sleep((void*)tmm::k_tm.get_ticks(), (void *)uaddr);
+                futex_sleep((void *)tmm::k_tm.get_ticks(), (void *)uaddr);
                 if (p->_futex_addr == 0)
                 {
                     p->_lock.release();
@@ -78,7 +85,6 @@ namespace proc
 
     int futex_wakeup(uint64 uaddr, int val, void *uaddr2, int val2)
     {
-
         return proc::k_pm.wakeup2(uaddr, val, uaddr2, val2);
     }
 }

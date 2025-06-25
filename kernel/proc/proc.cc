@@ -38,7 +38,7 @@ namespace proc
 
 
         // 初始化信号处理函数指针
-        for (int i = 0; i < ipc::signal::SIGRTMAX; ++i) {
+        for (int i = 0; i <= ipc::signal::SIGRTMAX; ++i) {
             _sigactions[i] = nullptr;
         }
         sigmask = 0;

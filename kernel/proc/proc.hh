@@ -70,7 +70,7 @@ namespace proc
         int _pid;              // 进程ID (Process ID)
         Pcb *_parent;          // 父进程的PCB指针
 
-        char _name[16]; // 进程名称 (用于调试)
+        char _name[30]; // 进程名称 (用于调试)
 
         // 内存管理相关
         uint64 _kstack = 0;    // 内核栈的虚拟地址
@@ -107,6 +107,7 @@ namespace proc
         void *_futex_addr; // Used for futex
         int *_set_child_tid = nullptr;
         int *_clear_child_tid = nullptr;
+		int wakeup2addtimes = 0; // 记录额外的唤醒次数, 比如两个线程都退出了,但是父进程还没有调用waitpid, 需要额外唤醒一次
 
         robust_list_head *_robust_list = nullptr;
 
@@ -114,7 +115,7 @@ namespace proc
         rlimit64 _rlim_vec[ResourceLimitId::RLIM_NLIMITS];
 
         // signal处理相关
-        proc::ipc::signal::sigaction *_sigactions[proc::ipc::signal::SIGRTMAX];
+        proc::ipc::signal::sigaction *_sigactions[proc::ipc::signal::SIGRTMAX + 1];
         uint64 sigmask;
         int _signal; // 等待的信号
         // 程序段相关
