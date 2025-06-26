@@ -936,6 +936,7 @@ namespace syscall
             printfRed("[SyscallHandler::sys_brk] Error fetching brk address\n");
             return -1;
         }
+        printfGreen("[SyscallHandler::sys_brk] n: %p,return %p\n", (void *)n, (void *)proc::k_pm.brk(n));
         return proc::k_pm.brk(n); // 调用进程管理器的 brk 函数
     }
     uint64 SyscallHandler::sys_munmap()

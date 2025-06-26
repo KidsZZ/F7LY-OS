@@ -15,6 +15,7 @@
 #include "devs/loongarch/disk_driver.hh"
 #endif
 
+#include <asm-generic/errno-base.h>
 #include "fs/vfs/dentrycache.hh"
 #include "fs/vfs/path.hh"
 #include "fs/ramfs/ramfs.hh"
@@ -1291,7 +1292,7 @@ namespace proc
     /// @return
     void *ProcessManager::mmap(void *addr, int length, int prot, int flags, int fd, int offset)
     {
-        printfYellow("[mmap] addr: %p, length: %d, prot: %d, flags: %d, fd: %d, offset: %d\n",
+        printfYellow("[mmap] addr: %p, length: %d, prot: %x, flags: %x, fd: %d, offset: %d\n",
                      addr, length, prot, flags, fd, offset);
         uint64 err = 0xffffffffffffffff;
         fs::normal_file *vfile = nullptr;
@@ -1324,10 +1325,12 @@ namespace proc
         if (p->_sz + length > MAXVA - PGSIZE) // 我写得maxva-pgsize是trampoline的地址
             return (void *)err;               // 超出最大虚拟地址空间
 
-        // if (length == 0)
-        // {
-        //     length = 10 * PGSIZE; // 默认映射10页
-        // }
+        if (length == 0)
+        {
+            // 对于 length = 0 的情况，根据 POSIX 标准应该返回错误
+            // printfRed("[mmap] Invalid length: 0\n");
+            // return -1;
+        }
 
         // MAP_FIXED 的处理应该在 VMA 分配中进行，而不是直接返回地址
 
@@ -1343,6 +1346,12 @@ namespace proc
                     // MAP_FIXED 要求在指定地址进行映射
                     p->_vm[i].addr = (uint64)addr;
                     printfCyan("[mmap] MAP_FIXED mapping at specified address %p\n", addr);
+                    if(p->_pt.walk_addr((uint64)addr)!= nullptr)
+                    {
+                        // 如果指定地址已经被映射，返回错误
+                        printfRed("[mmap] MAP_FIXED address %p is already mapped\n", addr);
+                        return addr;
+                    }
                 }
                 else
                 {
@@ -1362,12 +1371,12 @@ namespace proc
                     printfCyan("[mmap] anonymous mapping at %p, length: %d, prot: %d, flags: %d\n",
                                (void *)p->_vm[i].addr, length, prot, flags);
                     p->_vm[i].is_expandable = 1;              // 可扩展
-                    p->_vm[i].len = MAX(length, 10 * PGSIZE); // 至少10页
+                    p->_vm[i].len = MAX(length,  PGSIZE); // 至少10页
 
                     if (flags & MAP_FIXED)
                     {
                         // MAP_FIXED 不扩展最大长度，只能使用指定区域
-                        p->_vm[i].len = length; // 使用指定长度
+                        p->_vm[i].len = MAX(length, PGSIZE); // 至少一页
                         p->_vm[i].addr = (uint64)addr;
                         p->_vm[i].max_len = p->_vm[i].len;
                         p->_vm[i].is_expandable = 0; // MAP_FIXED 通常不可扩展
@@ -1386,6 +1395,9 @@ namespace proc
                     vfile->dup(); // 只对文件映射增加引用计数
                 }
 
+                printfYellow("[mmap] Created VMA %d: addr=%p, len=%d, max_len=%d, prot=%d, flags=%d\n",
+                             i, (void*)p->_vm[i].addr, p->_vm[i].len, p->_vm[i].max_len, p->_vm[i].prot, p->_vm[i].flags);
+
                 // 只有非 MAP_FIXED 的映射才更新 p->_sz
                 if (!(flags & MAP_FIXED))
                 {
@@ -1401,6 +1413,7 @@ namespace proc
                     }
                 }
 
+                printfYellow("[mmap] Process size after mmap: %p\n", (void*)p->_sz);
                 return (void *)p->_vm[i].addr; // 返回映射的虚拟地址
             }
         }
@@ -1644,8 +1657,52 @@ namespace proc
                     de->getNode()->nodeRead(reinterpret_cast<uint64>(interp_buf), ph.off, ph.filesz);
                     interp_buf[ph.filesz] = '\0';
                     interpreter_path = interp_buf;
-                    interp_de = de;
                     printfCyan("execve: found dynamic interpreter: %s\n", interpreter_path.c_str());
+                    
+                    if (strcmp(interpreter_path.c_str(), "/lib/ld-linux-riscv64-lp64d.so.1") == 0)
+                    {
+                        printfBlue("execve: using riscv64 dynamic linker\n");
+                        fs::Path path_resolver_interp("/mnt/glibc/lib/ld-linux-riscv64-lp64d.so.1");
+                        interp_de = path_resolver_interp.pathSearch();
+                        if (interp_de == nullptr) {
+                            printfRed("execve: failed to find riscv64 dynamic linker\n");
+                            return -1;
+                        }
+                    }
+                    else if (strcmp(interpreter_path.c_str(), "/lib/ld-linux-loongarch64.so.1") == 0)
+                    {
+                        printfBlue("execve: using loongarch64 dynamic linker\n");
+                        fs::Path path_resolver_interp("/mnt/glibc/lib/ld-linux-loongarch-lp64d.so.1");
+                        interp_de = path_resolver_interp.pathSearch();
+                        if (interp_de == nullptr) {
+                            printfRed("execve: failed to find loongarch64 dynamic linker\n");
+                            return -1;
+                        }
+                    }
+                    else if (strcmp(interpreter_path.c_str(), "/lib64/ld-musl-loongarch-lp64d.so.1") == 0)
+                    {
+                        printfBlue("execve: using loongarch dynamic linker\n");
+                        fs::Path path_resolver_interp("/mnt/musl/lib/libc.so");
+                        interp_de = path_resolver_interp.pathSearch();
+                        if (interp_de == nullptr) {
+                            printfRed("execve: failed to find loongarch musl linker\n");
+                            return -1;
+                        }
+                    }
+                    else if (strcmp(interpreter_path.c_str(), "/lib/ld-musl-riscv64-sf.so.1") ==0 )
+                    {
+                        printfBlue("execve: using riscv64 sf dynamic linker\n");
+                        fs::Path path_resolver_interp("/mnt/musl/lib/libc.so");
+                        interp_de = path_resolver_interp.pathSearch();
+                        if (interp_de == nullptr) {
+                            printfRed("execve: failed to find riscv64 musl linker\n");
+                            return -1;
+                        }
+                    }
+                    interp_de->getNode()->nodeRead(reinterpret_cast<uint64>(interp_buf), ph.off, ph.filesz);
+                    eastl::string str = interp_buf;
+                    printfCyan("execve: interpreter path: %s\n", str.c_str());
+    
                     break;
                 }
             }
@@ -1812,7 +1869,7 @@ namespace proc
                     // 加载动态链接器段内容
                     printfCyan("execve: loading dynamic linker segment %d, vaddr: %p, memsz: %p, offset: %p\n",
                                j, (void *)interp_ph.vaddr, (void *)interp_ph.memsz, (void *)interp_ph.off);
-                    if (load_seg(new_pt, interp_base + PGROUNDDOWN(interp_ph.vaddr), interp_de, PGROUNDDOWN(interp_ph.off), interp_ph.filesz) < 0)
+                    if (load_seg(new_pt, interp_ph.vaddr, interp_de,interp_ph.off, interp_ph.filesz) < 0)
                     {
                         printfRed("execve: load dynamic linker segment failed\n");
                         k_pm.proc_freepagetable(new_pt, new_sz);

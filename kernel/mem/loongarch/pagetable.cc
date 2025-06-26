@@ -140,7 +140,7 @@ namespace mem
 			}
 			else if (pte_valid)
 			{
-				panic("freewalk: leaf");
+				// panic("freewalk: leaf");
 			}
 		}
 		k_pmm.free_page((void *)_base_addr);

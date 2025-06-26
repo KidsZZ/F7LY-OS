@@ -7,7 +7,7 @@ extern "C"
     {
         // start_shell();
         // basic_musl_test();
-        // basic_glibc_test();   //  /lib/ld-linux-riscv64-lp64d.so.1
+        basic_glibc_test();   //  /lib/ld-linux-riscv64-lp64d.so.1
         // busybox_musl_test();
         // busybox_glibc_test();
         // libc_musl_test();   // /lib/ld-musl-riscv64-sf.so.1
@@ -15,7 +15,7 @@ extern "C"
         // libcbench_test();
         // iozone_test();
         // lmbench_test();
-        lua_test();
+        // lua_test();
         shutdown();
         return 0;
     }

@@ -351,7 +351,8 @@ sfence_vma()
 }
 
 typedef uint64 pte_t;
-typedef uint64 *pagetable_t; // 512 PTEs
+typedef uint64 *
+ble_t; // 512 PTEs
 
 #endif // __ASSEMBLER__
 
@@ -436,16 +437,16 @@ r_tp()
   return x;
 }
 
-static inline uint32
+static inline uint64
 r_csr_crmd()
 {
-  uint32 x;
+  uint64 x;
   asm volatile("csrrd %0, 0x0" : "=r"(x));
   return x;
 }
 
 static inline void
-w_csr_crmd(uint32 x)
+w_csr_crmd(uint64 x)
 {
   asm volatile("csrwr %0, 0x0" : : "r"(x));
 }
@@ -453,16 +454,16 @@ w_csr_crmd(uint32 x)
 #define PRMD_PPLV (3U << 0) // Previous Privilege
 #define PRMD_PIE (1U << 2)  // Previous Int_enable
 
-static inline uint32
+static inline uint64
 r_csr_prmd()
 {
-  uint32 x;
+  uint64 x;
   asm volatile("csrrd %0, 0x1" : "=r"(x));
   return x;
 }
 
 static inline void
-w_csr_prmd(uint32 x)
+w_csr_prmd(uint64 x)
 {
   asm volatile("csrwr %0, 0x1" : : "r"(x));
 }
@@ -483,10 +484,10 @@ w_csr_era(uint64 x)
 
 #define CSR_ESTAT_ECODE (0x3fU << 16)
 
-static inline uint32
+static inline uint64
 r_csr_estat()
 {
-  uint32 x;
+  uint64 x;
   asm volatile("csrrd %0, 0x5" : "=r"(x));
   return x;
 }
@@ -496,32 +497,32 @@ r_csr_estat()
 #define HWI_VEC 0x3fcU
 #define TI_VEC (0x1 << CSR_ECFG_LIE_TI_SHIFT)
 
-static inline uint32
+static inline uint64
 r_csr_ecfg()
 {
-  uint32 x;
+  uint64 x;
   asm volatile("csrrd %0, 0x4" : "=r"(x));
   return x;
 }
 
 static inline void
-w_csr_ecfg(uint32 x)
+w_csr_ecfg(uint64 x)
 {
   asm volatile("csrwr %0, 0x4" : : "r"(x));
 }
 
 #define CSR_TICLR_CLR (0x1 << 0)
 
-static inline uint32
+static inline uint64
 r_csr_ticlr()
 {
-  uint32 x;
+  uint64 x;
   asm volatile("csrrd %0, 0x44" : "=r"(x));
   return x;
 }
 
 static inline void
-w_csr_ticlr(uint32 x)
+w_csr_ticlr(uint64 x)
 {
   asm volatile("csrwr %0, 0x44" : : "r"(x));
 }
@@ -569,13 +570,13 @@ w_csr_merrentry(uint64 x)
 }
 
 static inline void
-w_csr_stlbps(uint32 x)
+w_csr_stlbps(uint64 x)
 {
   asm volatile("csrwr %0, 0x1e" : : "r"(x));
 }
 
 static inline void
-w_csr_asid(uint32 x)
+w_csr_asid(uint64 x)
 {
   asm volatile("csrwr %0, 0x18" : : "r"(x));
 }
@@ -643,21 +644,21 @@ r_csr_tval( )
 #define PWCH_HPTW_EN 1 << 24
 
 static inline void
-w_csr_pwcl(uint32 x)
+w_csr_pwcl(uint64 x)
 {
   asm volatile("csrwr %0, 0x1c" : : "r"(x));
 }
 
 static inline void
-w_csr_pwch(uint32 x)
+w_csr_pwch(uint64 x)
 {
   asm volatile("csrwr %0, 0x1d" : : "r"(x));
 }
 
-static inline uint32
+static inline uint64
 r_csr_badi()
 {
-  uint32 x;
+  uint64 x;
   asm volatile("csrrd %0, 0x8" : "=r"(x));
   return x;
 }
@@ -671,15 +672,15 @@ r_csr_badv()
 }
 
 static inline void
-w_csr_euen(uint32 x)
+w_csr_euen(uint64 x)
 {
   asm volatile("csrwr %0, 0x2" : : "r"(x));
 }
 
-static inline uint32
+static inline uint64
 r_csr_euen()
 {
-  uint32 x;
+  uint64 x;
   asm volatile("csrrd %0, 0x2" : "=r"(x));
   return x;
 }
@@ -715,13 +716,13 @@ constexpr uint64 LOONGARCH_IOCSR_EXTIOI_ROUTE_BASE = 0x1c00 | DMWIN1_MASK;
 constexpr uint64 LOONGARCH_IOCSR_EXRIOI_NODETYPE_BASE = 0x14a0 | DMWIN1_MASK;
 constexpr uint64 dmwin_mask = 0xFUL << 60;
 constexpr uint64 virt_to_phy_address(uint64 virt) { return virt & ~dmwin_mask; }
-inline void write_itr_cfg(uint64 itrReg, uint32 data)
+inline void write_itr_cfg(uint64 itrReg, uint64 data)
 {
-  *((volatile uint32 *)itrReg) = data;
+  *((volatile uint64 *)itrReg) = data;
 }
-inline uint32 read_itr_cfg(uint64 itrReg)
+inline uint64 read_itr_cfg(uint64 itrReg)
 {
-  return *((volatile uint32 *)itrReg);
+  return *((volatile uint64 *)itrReg);
 }
 inline void write_itr_cfg_64b(uint64 itrReg, uint64 data)
 {
@@ -743,7 +744,7 @@ inline u8 read_itr_cfg_8b(uint64 itr_reg)
 static inline int
 intr_get()
 {
-  uint32 x = r_csr_crmd();
+  uint64 x = r_csr_crmd();
   return (x & CSR_CRMD_IE) != 0;
 }
 constexpr uint64 iodma_win_base = 0x0UL << 60;
