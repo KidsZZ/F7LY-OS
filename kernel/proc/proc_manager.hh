@@ -71,8 +71,7 @@ namespace proc
         void exit(int state);
         int clone(unsigned long flags, uint64 stack_ptr,
                   uint64 ptid, uint64 tls, uint64 ctid);
-        int fork(uint64 usp);
-        int fork();
+        Pcb* fork(Pcb* p, uint64 flags, uint64 stack_ptr, uint64 ctid, bool is_clone);
         void fork_ret();
         long brk(long n);
         int open(int dir_fd, eastl::string path, uint flags);

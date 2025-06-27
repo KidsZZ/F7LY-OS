@@ -73,11 +73,11 @@ namespace proc
         char _name[16]; // 进程名称 (用于调试)
 
         // 内存管理相关
-        uint64 _kstack = 0;    // 内核栈的虚拟地址
-        uint64 _sz;            // 进程用户空间的内存大小 (字节)
-        #ifdef LOONGARCH
+        uint64 _kstack = 0; // 内核栈的虚拟地址
+        uint64 _sz;         // 进程用户空间的内存大小 (字节)
+#ifdef LOONGARCH
         uint64 elf_base = 0; // ELF 文件的基地址 (用于加载可执行文件)
-        #endif
+#endif
         mem::PageTable _pt;    // 用户空间的页表
         TrapFrame *_trapframe; // 保存用户态 TrapFrame 的地址 (用于系统调用和异常处理)
 
@@ -107,7 +107,8 @@ namespace proc
         vma _vm[NVMA]; // 虚拟内存区域数组
 
         // 线程/futex 相关
-        void *_futex_addr; // Used for futex
+        void *_futex_addr = nullptr; // Used for futex
+        int _tid = 0;                // 线程ID (Thread ID)，用于标识线程
         int *_set_child_tid = nullptr;
         int *_clear_child_tid = nullptr;
 
@@ -122,7 +123,7 @@ namespace proc
         // 通过二进制运算计算
         uint64 _sigmask;
         uint64 _signal;
-        
+
         // 程序段相关
         TODO("TBF")
         program_section_desc _prog_sections[max_program_section_num];

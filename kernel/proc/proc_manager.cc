@@ -289,6 +289,7 @@ namespace proc
         p->_killed = 0;
         p->_xstate = 0;
         p->_state = ProcState::UNUSED;
+        p->_tid = 0;
         // printf("freeproc: freeing process %d\n", p->_pid);
         for (int i = 0; i < (int)max_open_files; ++i)
         {
@@ -671,43 +672,91 @@ namespace proc
         return -1;
     }
 
-    int ProcessManager::fork()
+    int ProcessManager::clone(uint64 flags, uint64 stack_ptr, uint64 ptid, uint64 tls, uint64 ctid)
     {
-        return fork(0); // 默认usp为0
+        if (flags == 0)
+        {
+            return 22; // EINVAL: Invalid argument
+        }
+        Pcb *p = get_cur_pcb();
+        Pcb *np = fork(p, flags, stack_ptr, ctid, false);
+        if (np == nullptr)
+        {
+            return -1; // EAGAIN: Out of memory
+        }
+        uint64 new_tid = np->_tid;
+        if (flags & syscall::CLONE_SETTLS)
+        {
+            np->_trapframe->tp = tls; // 设置线程局部存储指针
+        }
+        if (flags & syscall::CLONE_PARENT_SETTID)
+        {
+            if (mem::k_vmm.copy_out(p->_pt, ptid, &new_tid, sizeof(new_tid)) < 0)
+            {
+                freeproc(np);
+                np->_lock.release();
+                return -1; // EFAULT: Bad address
+            }
+        }
+        np->_lock.release();
+        return new_tid;
     }
 
-    int ProcessManager::fork(uint64 usp)
+    // 这个函数主要用提供clone的底层支持
+    Pcb *ProcessManager::fork(Pcb *p, uint64 flags, uint64 stack_ptr, uint64 ctid, bool is_clone)
     {
         TODO("copy on write fork");
         int i, pid;
-        Pcb *np;                // new proc
-        Pcb *p = get_cur_pcb(); // current proc
+        Pcb *np; // new proc
 
         // Allocate process.
         if ((np = alloc_proc()) == nullptr)
         {
-            return -1;
+            return nullptr;
         }
-
-        // Copy user memory from _parent to child.
+        if (flags & syscall::CLONE_FILES)
+        {
+            panic("fork: CLONE_FILES not supported yet");
+        }
+        else
+        {
+            for (i = 0; i < (int)max_open_files; i++)
+            {
+                if (p->_ofile[i])
+                {
+                    // fs::k_file_table.dup( p->_ofile[ i ] );
+                    p->_ofile[i]->dup();
+                    np->_ofile[i] = p->_ofile[i];
+                    np->_fl_cloexec[i] = p->_fl_cloexec[i]; // 继承 CLOEXEC 标志
+                }
+            }
+        }
         mem::PageTable *curpt, *newpt;
         curpt = p->get_pagetable();
         newpt = np->get_pagetable();
+        if (flags & syscall::CLONE_VM)
+        {
+            // 因为在alloc_proc中已经创建了根页表项
+            // 如果要共享页表, 必须先把根页表项设置为相同的
+        }
+        else
+        {
 #ifdef RISCV
-        if (mem::k_vmm.vm_copy(*curpt, *newpt, 0, p->_sz) < 0)
-        {
-            freeproc(np);
-            np->_lock.release();
-            return -1;
-        }
+            if (mem::k_vmm.vm_copy(*curpt, *newpt, 0, p->_sz) < 0)
+            {
+                freeproc(np);
+                np->_lock.release();
+                return nullptr;
+            }
 #elif LOONGARCH
-        if (mem::k_vmm.vm_copy(*curpt, *newpt, p->elf_base, p->_sz - p->elf_base) < 0)
-        {
-            freeproc(np);
-            np->_lock.release();
-            return -1;
-        }
+            if (mem::k_vmm.vm_copy(*curpt, *newpt, p->elf_base, p->_sz - p->elf_base) < 0)
+            {
+                freeproc(np);
+                np->_lock.release();
+                return nullptr;
+            }
 #endif
+        }
 
         np->_sz = p->_sz;
 #ifdef LOONGARCH
@@ -772,7 +821,7 @@ namespace proc
 
         np->_state = ProcState::RUNNABLE;
         np->_user_ticks = 0;
-        np->_lock.release();
+        // np->_lock.release();
         // printfCyan("blublublu");
         return pid;
     }
@@ -898,7 +947,6 @@ namespace proc
                 return -1;
             }
 
-
             // wait children to exit
             sleep(p, &_wait_lock);
         }
@@ -973,17 +1021,20 @@ namespace proc
         _wait_lock.acquire();
         reparent(p); // 将 p 的所有子进程交给 init 进程收养
 
-        if (p->_parent){
+        if (p->_parent)
+        {
             wakeup(p->_parent); // 唤醒父进程（可能在 wait() 中阻塞）
         }
 
-        if(p->_parent){
+        if (p->_parent)
+        {
             p->_parent->_lock.acquire();
             p->_parent->add_signal(ipc::signal::SIGCHLD); // 通知父进程有子进程退出
             p->_parent->_lock.release();
         }
 
-        if (p->_parent){
+        if (p->_parent)
+        {
             wakeup(p->_parent); // 唤醒父进程（可能在 wait() 中阻塞）
         }
 
@@ -1695,6 +1746,12 @@ namespace proc
         // 这个地方不能按着学长的代码写, 因为学长的内存布局和我们的不同
         // 而且他们的proc_pagetable函数是弃用的, 我们的是好的, 直接用这个函数就可以构建基础页表
 
+        // ========== 预第四阶段：初始化程序段记录 ==========
+        // 程序段描述符，用于记录加载的程序段信息
+        using psd_t = program_section_desc;
+        int new_sec_cnt = 0;                         // 新程序段计数
+        psd_t new_sec_desc[max_program_section_num]; // 新程序段描述符数组
+
         // ========== 第三阶段：加载ELF程序段 ==========
         {
 
@@ -1956,8 +2013,8 @@ namespace proc
 
         // 将ELF程序头转储到用户空间，供glibc的动态链接器使用
         TODO(u64 phdr = 0; // AT_PHDR辅助向量的值
-             {
-                 ulong phsz = elf.phentsize * elf.phnum; // 程序头表的总大小
+        {
+            ulong phsz = elf.phentsize * elf.phnum; // 程序头表的总大小
                  u64 sz1;
                  u64 load_end = 0; // 所有LOAD段的结束地址
 
@@ -1972,52 +2029,50 @@ namespace proc
                  // 在LOAD段之后分配空间存放程序头
                  load_end = hsai::page_round_up(load_end);
                  if ((sz1 = mm::k_vmm.vm_alloc(new_pt, load_end, load_end + phsz)) == 0)
-                 {
+            {
                      log_error("execve: vaalloc");
                      _free_pt_with_sec(new_pt, new_sec_desc, new_sec_cnt);
-                     return -1;
-                 }
+                return -1;
+            }
 
-                 // 分配临时缓冲区读取程序头
+            // 分配临时缓冲区读取程序头
                  u8 *tmp = new u8[phsz + 8];
-                 if (tmp == nullptr)
-                 {
+            if (tmp == nullptr)
+            {
                      log_error("execve: no mem");
                      _free_pt_with_sec(new_pt, new_sec_desc, new_sec_cnt);
-                     return -1;
-                 }
+                return -1;
+            }
 
-                 // 从文件读取程序头表
-                 if (de->getNode()->nodeRead((ulong)tmp, elf.phoff, phsz) != phsz)
-                 {
+            // 从文件读取程序头表
+            if (de->getNode()->nodeRead((ulong)tmp, elf.phoff, phsz) != phsz)
+            {
                      log_error("execve: node read");
-                     delete[] tmp;
+                delete[] tmp;
                      _free_pt_with_sec(new_pt, new_sec_desc, new_sec_cnt);
-                     return -1;
-                 }
+                return -1;
+            }
 
-                 // 将程序头表拷贝到用户空间
+            // 将程序头表拷贝到用户空间
                  if (mm::k_vmm.copyout(new_pt, load_end, (void *)tmp, phsz) < 0)
-                 {
+            {
                      log_error("execve: copy out");
-                     delete[] tmp;
+                delete[] tmp;
                      _free_pt_with_sec(new_pt, new_sec_desc, new_sec_cnt);
-                     return -1;
-                 }
+                return -1;
+            }
 
-                 delete[] tmp;
+            delete[] tmp;
 
-                 phdr = load_end; // 记录程序头在用户空间的地址
+            phdr = load_end; // 记录程序头在用户空间的地址
 
-                 // 将程序头段作为一个程序段记录下来
-                 psd_t &ph_psd = new_sec_desc[new_sec_cnt];
-                 ph_psd._sec_start = (void *)phdr;
-                 ph_psd._sec_size = phsz;
-                 ph_psd._debug_name = "program headers";
-                 new_sec_cnt++;
-
-                 new_sz += hsai::page_round_up(phsz);
-             })
+            // // 将程序头段作为一个程序段记录下来
+            // psd_t &ph_psd = new_sec_desc[new_sec_cnt];
+            // ph_psd._sec_start = (void *)phdr;
+            // ph_psd._sec_size = phsz;
+            // ph_psd._debug_name = "program headers";
+            // new_sec_cnt++;
+        }
 
         // ========== 第五阶段：分配用户栈空间 ==========
 

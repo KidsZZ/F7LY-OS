@@ -861,8 +861,6 @@ namespace syscall
     }
     uint64 SyscallHandler::sys_clone()
     {
-        TODO("TBF")
-        // printfYellow("sys_clone\n");
         int flags;
         uint64 stack, tls, ctid, ptid;
         _arg_int(0, flags);
