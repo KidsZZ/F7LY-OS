@@ -462,7 +462,7 @@ namespace fs
 			Ext4Buffer *blk_buf = read_logical_block( block_no, true );
 			if ( blk_buf == nullptr )
 			{
-				printfYellow( "ext4-inode : read logical block %d fail", block_no );
+				printfYellow( "ext4-inode : read logical block %d fail\n", block_no );
 				return 0;
 			}
 			f = (u8 *) blk_buf->get_data_ptr();
@@ -476,7 +476,7 @@ namespace fs
 												  true ); // pin the buffer
 					if ( blk_buf == nullptr )
 					{
-						printfYellow( "ext4-inode : read logical block %d fail", block_no + b_idx );
+						printfYellow( "ext4-inode : read logical block %d fail\n", block_no + b_idx );
 						return 0;
 					}
 					f = (u8 *) blk_buf->get_data_ptr();
@@ -512,7 +512,7 @@ namespace fs
 					blk_buf = read_logical_block( blk_no, true );
 					if ( blk_buf == nullptr )
 					{
-						printfYellow( "ext4-inode : read logical block %d fail", blk_no );
+						printfYellow( "ext4-inode : read logical block %d fail\n", blk_no );
 						return 0;
 					}
 					blk_ptr = (u8 *) blk_buf->get_data_ptr() + off % blk_sz;
@@ -611,10 +611,17 @@ namespace fs
 								&( st->leaf ), &( ed->leaf ), &block, comp_leaf );
 						if ( dst_node == nullptr ) // 查找失败
 						{
-							printfRed( "ext4-inode : extents leaf binary search " "error" );
-							if ( internal_block ) // 返回前先将前一个块释放
-								internal_block->unpin();
-							return nullptr;
+                            printfYellow("ext4-inode : current file has no extent for block %d, fill with zero\n", block);
+                            
+                            if (internal_block)
+                                internal_block->unpin();// 返回前先将前一个块释放
+
+                            // 自动填充0：分配一个全0的临时buffer
+                            long block_size = _belong_fs->rBlockSize();
+                            Ext4Buffer *zero_buf = new Ext4Buffer(block_size);
+                            memset(zero_buf->get_data_ptr(), 0, block_size);
+                            // 标记为临时buffer，调用者用完后delete
+                            return zero_buf;
 						}
 
 						// 目标块的物理块号
@@ -805,7 +812,7 @@ namespace fs
 
 			if ( block_buf == nullptr )
 			{
-				printfRed( "ext4-inode : read logical block 0 fail" );
+				printfRed( "ext4-inode : read logical block 0 fail\n" );
 				return nullptr;
 			}
 

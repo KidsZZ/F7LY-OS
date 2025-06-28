@@ -1,6 +1,7 @@
 #pragma once
 
 #include "types.hh"
+#include "trapframe.hh"
 
 namespace proc
 {
@@ -25,6 +26,13 @@ namespace proc
                 uint64 sig[1]; // 最多 64 个信号
             } sigset_t;
 
+            struct signal_frame
+            {
+                sigset_t mask;
+                TrapFrame tf;
+                signal_frame *next;
+            };
+
             // 简化版 sigaction
             typedef struct sigaction
             {
@@ -47,4 +55,5 @@ namespace proc
             void clear_signal(Pcb *now_p, int sig);
         } // namespace signal
     } // namespace ipc
+
 } // namespace proc

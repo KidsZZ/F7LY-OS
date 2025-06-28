@@ -13,6 +13,7 @@
 #include "prlimit.hh"
 #include "futex.hh"
 #include "fs/vfs/file/file.hh"
+#include "signal.hh"
 namespace fs
 {
     class dentry;
@@ -118,10 +119,10 @@ namespace proc
 
         // signal处理相关
         proc::ipc::signal::sigaction *_sigactions[proc::ipc::signal::SIGRTMAX + 1];
-
         // 通过二进制运算计算
-        uint64 _sigmask;
-        uint64 _signal;
+        uint64 _sigmask = 0;
+        uint64 _signal = 0;
+        ipc::signal::signal_frame *sig_frame = nullptr; // 信号处理帧，用于保存信号处理的上下文
         
         // 程序段相关
         TODO("TBF")

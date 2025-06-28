@@ -38,6 +38,7 @@ extern "C"
         // printf("into _wrapped_fork_ret\n");
         proc::k_pm.fork_ret();
     }
+    extern char sig_trampoline[]; // sig_trampoline.S
 }
 
 namespace proc
@@ -289,6 +290,24 @@ namespace proc
         p->_killed = 0;
         p->_xstate = 0;
         p->_state = ProcState::UNUSED;
+        // 清空信号相关
+        while (p->sig_frame != nullptr)
+        {
+            ipc::signal::signal_frame *next_frame = p->sig_frame->next;
+            mem::k_pmm.free_page(p->sig_frame); // 释放当前信号处理帧
+            p->sig_frame = next_frame;          // 移动到下一个帧
+        }
+        p->sig_frame = nullptr; // 清空信号处理帧
+        p->_signal = 0;
+        p->_sigmask = 0;
+        for (int i = 0; i <= ipc::signal::SIGRTMAX; ++i)
+        {
+            if (p->_sigactions[i] != nullptr)
+            {
+                delete p->_sigactions[i];
+                p->_sigactions[i] = nullptr;
+            }
+        }
         // printf("freeproc: freeing process %d\n", p->_pid);
         for (int i = 0; i < (int)max_open_files; ++i)
         {
@@ -303,14 +322,6 @@ namespace proc
                 }
                 p->_ofile[i]->free_file();
                 p->_ofile[i] = nullptr;
-            }
-        }
-        for (int i = 0; i <= ipc::signal::SIGRTMAX; ++i)
-        {
-            if (p->_sigactions[i] != nullptr)
-            {
-                delete p->_sigactions[i];
-                p->_sigactions[i] = nullptr;
             }
         }
         /// TODO:检查这个对不对，这个本来应该在exit的时候解除映射，但是我看都只有
@@ -363,6 +374,13 @@ namespace proc
             printfRed("proc_pagetable: map trapframe failed\n");
             return empty_pt;
         }
+        if (mem::k_vmm.map_pages(pt, SIG_TRAMPOLINE, PGSIZE, (uint64)sig_trampoline, riscv::PteEnum::pte_readable_m | riscv::PteEnum::pte_writable_m) == 0)
+        {
+            mem::k_vmm.vmfree(pt, 0);
+
+            printfRed("proc_pagetable: map sigtrapframe failed\n");
+            return empty_pt;
+        }
 
 #elif defined(LOONGARCH)
         if (mem::k_vmm.map_pages(pt, TRAPFRAME, PGSIZE, (uint64)(p->_trapframe), PTE_V | PTE_NX | PTE_P | PTE_W | PTE_R | PTE_MAT | PTE_D) == 0)
@@ -371,17 +389,16 @@ namespace proc
             printfRed("proc_pagetable: map trapframe failed\n");
             return empty_pt;
         }
-///@todo  sig_tampoline
-// 这里的 SIG_TRAMPOLINE 是一个特殊的地址，用于处理信号 trampoline
-// 目前暂时注释掉，因为没有实现信号处理相关的逻辑
-// 需要在后续实现信号处理时再启用
-//   if(mappages(pt, SIG_TRAMPOLINE, PGSIZE,
-//           (uint64)sig_trampoline, PTE_P | PTE_MAT | PTE_D) < 0) {
-//     printf("Fail to map sig_trampoline\n");
-//     uvmunmap(pagetable, TRAPFRAME, 1, 0);
-//     uvmfree(pagetable, 0);
-//     return 0;
-//           }
+        ///@todo  sig_tampoline
+        // 这里的 SIG_TRAMPOLINE 是一个特殊的地址，用于处理信号 trampoline
+        // 目前暂时注释掉，因为没有实现信号处理相关的逻辑
+        // 需要在后续实现信号处理时再启用
+        if (mem::k_vmm.map_pages(pt, SIG_TRAMPOLINE, PGSIZE, (uint64)sig_trampoline, PTE_V | PTE_NX | PTE_P | PTE_W | PTE_R | PTE_MAT | PTE_D) == 0)
+        {
+            printf("Fail to map sig_trampoline\n");
+            mem::k_vmm.vmfree(pt, 0);
+            return empty_pt;
+        }
 #endif
         return pt;
     }
@@ -389,21 +406,17 @@ namespace proc
     {
         printfCyan("proc_freepagetable: freeing pagetable %p, size %u\n", pt.get_base(), sz);
 #ifdef RISCV
+        // riscv还有 trampoline的映射
         mem::k_vmm.vmunmap(pt, TRAMPOLINE, 1, 0);
+#endif
         mem::k_vmm.vmunmap(pt, TRAPFRAME, 1, 0);
+        mem::k_vmm.vmunmap(pt, SIG_TRAMPOLINE, 1, 0);
+#ifdef RISCV
         mem::k_vmm.vmfree(pt, sz);
-#elif defined(LOONGARCH)
+#elif LOONGARCH
         Pcb *proc = get_cur_pcb();
-        printfYellow("proc name: %s,elf_entry:%p\n", proc->_name, proc->elf_base);
-        mem::k_vmm.vmunmap(pt, TRAPFRAME, 1, 0);
-        if (strcmp(proc->_name, "initcode") == 0)
-        {
-            printfGreen("initcode end\n");
-        }
-        else
-        {
-            mem::k_vmm.vmfree(pt, sz - proc->elf_base, proc->elf_base);
-        }
+        // loongarch不是从0开始的，所以不需要从0开始释放
+        mem::k_vmm.vmfree(pt, sz - proc->elf_base, proc->elf_base);
 #endif
     }
 
@@ -964,6 +977,7 @@ namespace proc
 #elif defined(LOONGARCH)
             pa = to_vir(pa);
 #endif
+            // printf("[load_seg] reading %d bytes from file at offset %d to pa %p\n", n, offset + i, pa);
 
             if (de->getNode()->nodeRead(pa, offset + i, n) != n) // 读取文件内容到物理内存
                 return -1;
@@ -1787,7 +1801,8 @@ namespace proc
                 // printf("execve: loading segment %d, type: %d, vaddr: %p, memsz: %p, filesz: %p, flags: %d\n",
                 //        i, ph.type, (void *)ph.vaddr, (void *)ph.memsz, (void *)ph.filesz, ph.flags);
                 // 只处理LOAD类型的程序段
-                if(ph.type == elf::elfEnum::ELF_PROG_PHDR){
+                if (ph.type == elf::elfEnum::ELF_PROG_PHDR)
+                {
                     phdr = ph.vaddr; // 记录程序头的虚拟地址
                 }
                 if (ph.type != elf::elfEnum::ELF_PROG_LOAD)
@@ -2075,14 +2090,14 @@ namespace proc
             uint64 aux[AuxvEntryType::MAX_AT * 2] = {0};
             [[maybe_unused]] int index = 0;
 
-            ADD_AUXV(AT_HWCAP, 0);       // 硬件功能标志
-            ADD_AUXV(AT_PAGESZ, PGSIZE); // 页面大小
-            ADD_AUXV(AT_RANDOM, rd_pos); // 随机数地址
-            ADD_AUXV(AT_PHDR, phdr);      // 程序头表偏移
+            ADD_AUXV(AT_HWCAP, 0);             // 硬件功能标志
+            ADD_AUXV(AT_PAGESZ, PGSIZE);       // 页面大小
+            ADD_AUXV(AT_RANDOM, rd_pos);       // 随机数地址
+            ADD_AUXV(AT_PHDR, phdr);           // 程序头表偏移
             ADD_AUXV(AT_PHENT, elf.phentsize); // 程序头表项大小
             ADD_AUXV(AT_PHNUM, elf.phnum);     // 程序头表项数量 // 这个有问题
-            ADD_AUXV(AT_BASE, interp_base); // 动态链接器基地址（保留）
-            ADD_AUXV(AT_ENTRY, elf.entry);  // 程序入口点地址
+            ADD_AUXV(AT_BASE, interp_base);    // 动态链接器基地址（保留）
+            ADD_AUXV(AT_ENTRY, elf.entry);     // 程序入口点地址
             // ADD_AUXV(AT_SYSINFO_EHDR, 0); // 系统调用信息头（保留）
             // ADD_AUXV(AT_UID, 0);               // 用户ID
             // ADD_AUXV(AT_EUID, 0);              // 有效用户ID
