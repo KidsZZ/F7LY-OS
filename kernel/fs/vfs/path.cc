@@ -6,7 +6,7 @@
 // --------------------------------------------------------------
 //
 #include "proc_manager.hh"
-#include "fs/ext4/ext4_fs.hh" 
+#include "fs/ext4/ext4_fs.hh"
 
 #include "fs/vfs/path.hh"
 #include "fs/vfs/file/file.hh"
@@ -30,17 +30,19 @@ namespace fs
 	 * @note 若 base_ 不是 normal_file 类型，则会触发 panic。
 	 */
 	/// 这里的base_文件需要有dentry，目前只有normalfile有dentry
-	Path::Path( const eastl::string& path_, file *base_ )
-		: pathname( path_ )
+	Path::Path(const eastl::string &path_, file *base_)
+		: pathname(path_)
 	{
-		if(base_ == nullptr)
+		if (base_ == nullptr)
 		{
 			base = nullptr;
-		} else {
-			fs::normal_file *file = static_cast<fs::normal_file *>( base_ );
-			if( file == nullptr ) 
+		}
+		else
+		{
+			fs::normal_file *file = static_cast<fs::normal_file *>(base_);
+			if (file == nullptr)
 				panic("Path: base file is not a normalfile");
-			
+
 			base = file->getDentry();
 		}
 		pathbuild();
@@ -206,6 +208,7 @@ namespace fs
 
 	dentry *Path::pathSearch(bool parent)
 	{
+		printfCyan("pathSearch: %s\n", pathname.c_str());
 		/// @todo 1: 通过路径名查找文件
 
 		if (pathname == "/")
@@ -220,7 +223,7 @@ namespace fs
 
 		entry = base;
 		int dirsize = dirname.size();
-		// printfBlue( "path search %d level", dirsize );
+		printfBlue( "path search %d level", dirsize );
 		for (int i = 0; i < dirsize; i++)
 		{
 			while (entry->isMntPoint())
@@ -236,16 +239,20 @@ namespace fs
 				next = entry->getParent();
 			else
 			{
-				// printfBlue("dentry %s search sub-dir\n", entry->rName().c_str());
+				printfBlue("dentry %s search sub-dir\n", entry->rName().c_str());
 				if (auto it = entry->EntrySearch(dirname[i]); it != nullptr)
 				{
 					next = it;
 				}
 				else
+				{
+					printfRed("pathSearch: entry %s not found in children", dirname[i].c_str());
 					return nullptr;
+				}
 			}
 			entry = next;
 		}
+
 		return entry;
 	}
 
@@ -253,7 +260,7 @@ namespace fs
 	{
 		fs::dentry *mntEnt = pathSearch();
 		fs::dentry *devEnt = dev.pathSearch();
-		if (mntEnt == nullptr || devEnt == nullptr)//TODO: 无效路径，无法挂载，返回0？，抄自学长
+		if (mntEnt == nullptr || devEnt == nullptr) // TODO: 无效路径，无法挂载，返回0？，抄自学长
 		{
 			return 0;
 		}
@@ -310,12 +317,13 @@ namespace fs
 	{
 		// 获取当前 Path 对象的绝对路径
 		eastl::string old_path_str = this->AbsolutePath();
-		const char* old_path = old_path_str.c_str();
-		const char* new_path_cstr = new_path.c_str();
+		const char *old_path = old_path_str.c_str();
+		const char *new_path_cstr = new_path.c_str();
 
 		// 调用底层 ext4_do_rename 进行重命名
 		int ret = ext4_do_rename(old_path, new_path_cstr);
-		if (ret != 0) {
+		if (ret != 0)
+		{
 			// 返回底层错误码，便于上层处理
 			return ret;
 		}

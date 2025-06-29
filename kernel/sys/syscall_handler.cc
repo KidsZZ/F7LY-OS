@@ -395,10 +395,10 @@ namespace syscall
         if (_arg_int(2, option) < 0)
             return -1;
         // printf("[SyscallHandler::sys_wait4] pid: %d, wstatus_addr: %p, option: %d\n",
-            //    pid, wstatus_addr, option);
+        //    pid, wstatus_addr, option);
         int waitret = proc::k_pm.wait4(pid, wstatus_addr, option);
         // printf("[SyscallHandler::sys_wait4] waitret: %d\n",
-            //    waitret);
+        //    waitret);
         return waitret;
     }
     uint64 SyscallHandler::sys_getppid()
@@ -673,8 +673,12 @@ namespace syscall
         {
             // 情况二：fd <= 0，说明系统调用者提供的是路径名而非fd
             // 使用 open + fstat + close 组合临时获取元数据
+            printfGreen("[SyscallHandler::sys_statx] fd: %d, path_name: %s, kst_addr: %p\n",
+                        fd, path_name.c_str(), kst_addr);
             int ffd;
             ffd = proc::k_pm.open(fd, path_name, 2);
+
+
             if (ffd < 0)
                 return -1;
             proc::k_pm.fstat(ffd, &kst);
@@ -748,8 +752,10 @@ namespace syscall
         eastl::string path;
         if (mem::k_vmm.copy_str_in(*pt, path, path_addr, 100) < 0)
             return -1;
+        printfGreen("[SyscallHandler::sys_openat] dir_fd: %d, path: %s, flags: %x\n",
+               dir_fd, path.c_str(), flags);
         int res = proc::k_pm.open(dir_fd, path, flags);
-        // printfRed("openat filename %s return [fd] is %d file: %p refcnt: %d\n", path.c_str(), res, p->_ofile[res], p->_ofile[res]->refcnt);
+        printfRed("openat filename %s return [fd] is %d \n", path.c_str(), res);
         return res;
     }
     uint64 SyscallHandler::sys_write()
@@ -960,7 +966,7 @@ namespace syscall
             printfRed("[SyscallHandler::sys_brk] Error fetching brk address\n");
             return -1;
         }
-        uint64 ret= proc::k_pm.brk(n); // 调用进程管理器的 brk 函数
+        uint64 ret = proc::k_pm.brk(n); // 调用进程管理器的 brk 函数
         // printf("[SyscallHandler::sys_brk] brk to %p, ret: %p\n", (void *)n, (void *)ret);
         return ret;
     }
@@ -1321,7 +1327,7 @@ namespace syscall
     }
     uint64 SyscallHandler::sys_fstatat()
     {
-        return 0;
+        // return 0;
         // TODO,这个系统调用关掉了
         int dirfd;
         eastl::string path;

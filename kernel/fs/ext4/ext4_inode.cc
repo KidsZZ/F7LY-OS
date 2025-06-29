@@ -894,7 +894,14 @@ namespace fs
 			while ( 1 )
 			{
 				// 无效目录项，已到达当前块末尾
-				if ( dirent->inode == 0 ) break;
+				if (static_cast<int>(dirent->inode) <=0 ) break;
+				printfRed("dirent->inode: %p, dirent->rec_len: %d", dirent->inode, dirent->rec_len);
+				if(dirent->rec_len ==0)
+				{
+					printfRed("dirent->inode: %p, dirent->rec_len: %d", dirent->inode, dirent->rec_len);
+					return nullptr;
+					// panic( "ext4-inode : bad dirent rec_len 0" );
+				}
 
 				// 长度相等，可能是匹配项
 				if ( dir_name.size() == dirent->name_len )

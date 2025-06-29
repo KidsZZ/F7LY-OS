@@ -875,7 +875,6 @@ namespace proc
                 return -1;
             }
 
-
             // wait children to exit
             sleep(p, &_wait_lock);
         }
@@ -1158,6 +1157,7 @@ namespace proc
     /// @return
     int ProcessManager::open(int dir_fd, eastl::string path, uint flags)
     {
+        // printfRed("[open] dir_fd: %d, path: %s, flags: %x\n", dir_fd, path.c_str(), flags);
         // enum OpenFlags : uint
         // {
         // 	O_RDONLY	= 0x000U,
@@ -1179,7 +1179,7 @@ namespace proc
 
         fs::Path path_(path, file);  // 创建路径对象（支持相对路径）
         dentry = path_.pathSearch(); // 查找路径对应的 dentry（目录项）
-
+        printfBlue("[open] dir_fd: %d, path: %s, flags: %x\n", dir_fd, path.c_str(), flags);
         if (path == "") // empty path
             return -1;
 
@@ -1197,14 +1197,20 @@ namespace proc
                 return -1;
             }
         }
+        printfCyan("[open] path: %s, dentry: %p\n", path.c_str(), dentry);
         // dentry 不存在但设置了 O_CREAT，尝试创建文件
         if (dentry == nullptr && flags & O_CREAT)
         {
             // @todo: create file
             // 查找父目录
+            printfYellow("[open] dentry not found for path: %s, trying to create\n", path.c_str());
             fs::dentry *par_ = path_.pathSearch(true);
+            printfCyan("[open] parent dentry: %p\n", par_);
             if (par_ == nullptr)
+            {
+                printfRed("[open] parent directory not found for path: %s\n", path.c_str());
                 return -1;
+            }
             fs::FileAttrs attrs;
             if ((flags & __S_IFMT) == S_IFDIR)
                 attrs.filetype = fs::FileTypes::FT_DIRECT;
@@ -1218,8 +1224,12 @@ namespace proc
             }
         }
         if (dentry == nullptr)
+        {
+            printfRed("[open] dentry not found for path: %s\n", path.c_str());
             return -1; // file is not found
-                       // 获取设备信息和属性
+        }
+        // 获取设备信息和属性
+        // printfCyan("[open] dentry: %p, dev: %d, mode: %d\n", dentry, dentry->getNode()->rDev(), dentry->getNode()->rMode());
         int dev = dentry->getNode()->rDev();
         fs::FileAttrs attrs = dentry->getNode()->rMode();
         // 如果是设备文件，构造 device_file 对象并返回 fd
@@ -1271,13 +1281,20 @@ namespace proc
     /// @return 返回 0 表示成功；若 `fd` 非法或未打开，返回 -1。
     int ProcessManager::fstat(int fd, fs::Kstat *buf)
     {
-        return 0;
+        // return 0;
+        // printfCyan("[fstat] fd: %d\n", fd);
         if (fd < 0 || fd >= (int)max_open_files)
+        {
+            printfRed("[fstat] fd %d is out of range\n", fd);
             return -1;
+        }
 
         Pcb *p = get_cur_pcb();
         if (p->_ofile[fd] == nullptr)
+        {
+            printfRed("[fstat] fd %d is not opened\n", fd);
             return -1;
+        }
         fs::file *f = p->_ofile[fd];
         *buf = f->_stat;
 
@@ -2040,12 +2057,12 @@ namespace proc
             ADD_AUXV(AT_RANDOM, rd_pos);       // 随机数地址
             ADD_AUXV(AT_PHDR, phdr);           // 程序头表偏移
             ADD_AUXV(AT_PHENT, elf.phentsize); // 程序头表项大小
-            if(is_dynamic)
+            if (is_dynamic)
             {
                 ADD_AUXV(AT_PHNUM, elf.phnum); // 程序头表项数量 // 这个有问题
             }
-            ADD_AUXV(AT_BASE, interp_base);    // 动态链接器基地址（保留）
-            ADD_AUXV(AT_ENTRY, elf.entry);     // 程序入口点地址
+            ADD_AUXV(AT_BASE, interp_base); // 动态链接器基地址（保留）
+            ADD_AUXV(AT_ENTRY, elf.entry);  // 程序入口点地址
             // ADD_AUXV(AT_SYSINFO_EHDR, 0); // 系统调用信息头（保留）
             // ADD_AUXV(AT_UID, 0);               // 用户ID
             // ADD_AUXV(AT_EUID, 0);              // 有效用户ID

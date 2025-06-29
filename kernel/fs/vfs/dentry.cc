@@ -20,23 +20,38 @@ namespace fs
 
 	fs::dentry *dentry::EntrySearch( const eastl::string name )
     {
-        // printfBlue("dentry::EntrySearch: name = %s", name.c_str());
+        printfBlue("dentry::EntrySearch: name = %s\n", name.c_str());
         auto it = children.find(name);
         if (it != children.end())
             return it->second;
+        // printfRed("dentry::EntrySearch: name %s not found in children\n", name.c_str());
         if ( [[maybe_unused]] auto subnod = (_node->lookup(name)))
         {
+            // printfBlue("dentry::EntrySearch: subnod found with name = %s", name.c_str());
             dentry *subdentry = fs::dentrycache::k_dentryCache.alloDentry();
+            if( subdentry == nullptr )
+            {
+                printfRed("dentry::EntrySearch: Failed to create dentry");
+                return nullptr;
+            }
+            if(name.empty())
+            {
+                printfRed("dentry::EntrySearch: name is empty");
+                return nullptr;
+            }
             new ( subdentry ) dentry(name, (Inode *)subnod, this);
+            // printfBlue("dentry::EntrySearch: subdentry created with name = %s", name.c_str());
             //dentry *subdentry = new dentry(name , subnod, this);
             children[name] = subdentry;
             return subdentry;
         }
+        printfRed("dentry::EntrySearch: name %s not found in children\n", name.c_str());
         return nullptr;
     }
 
     fs::dentry *dentry::EntryCreate( eastl::string name, FileAttrs attrs, eastl::string dev_name )
     {
+        // printfBlue("dentry::EntryCreate: name = %s, attrs = %d, dev_name = %s", name.c_str(), attrs.transMode(), dev_name.c_str());
         if (name.empty()) {
             printfRed("dentry::EntryCreate: name is empty");
             return nullptr;
@@ -47,7 +62,7 @@ namespace fs
             printfRed("dentry::EntryCreate: name already exists");
             return nullptr;
         }
-            
+
         //[[maybe_unused]] FileSystem *fs = node->getFS();
 
         Inode* node_ = this->_node->mknode( name, attrs, dev_name );
@@ -56,8 +71,14 @@ namespace fs
             printfRed("dentry::EntryCreate: nodefs is not RamFS");
             return nullptr;
         }
+        // printfBlue("dentry::EntryCreate: node created with name = %s", name.c_str());
         //dentry *newden = new dentry( name, node_, this );
         dentry *newden = fs::dentrycache::k_dentryCache.alloDentry();
+        if (newden == nullptr) {
+            printfRed("dentry::EntryCreate: Failed to create dentry");
+            delete node_; // 避免内存泄漏
+            return nullptr;
+        }
         new ( newden ) dentry( name, node_, this );
         if ( newden == nullptr ) {
             printfRed("dentry::EntryCreate: Failed to create RamFSDen");
