@@ -87,12 +87,12 @@ namespace proc
                     {
                         if(np->_state == ProcState::UNUSED){
                             flag = true;
-                            break;
+                            // break;
                         }
-                        // printf("[sche]  proc gid: [%d], pid: [%d], parent: [%d], state: %d, name: %s\n", np->_gid, np->_pid,  np->get_ppid(), (int)np->_state, np->_name);
+                        printf("[sche]  proc gid: [%d], pid: [%d], parent: [%d], state: %d, name: %s\n", np->_gid, np->_pid,  np->get_ppid(), (int)np->_state, np->_name);
                     }
                     if(flag == false){
-                        panic("no unused proc in pool, please check your code");
+                        // panic("no unused proc in pool, please check your code");
                     }
                     cpu->set_cur_proc(nullptr);
                 }
