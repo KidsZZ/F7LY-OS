@@ -592,6 +592,7 @@ namespace mem
         {
             if ((pte = old_pt.walk(va, false)).is_null())
             {
+                continue;
                 panic("uvmcopy: pte should exist for va: %p", va);
             }
             if (pte.is_valid() == 0)
