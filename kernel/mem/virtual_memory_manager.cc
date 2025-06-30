@@ -452,7 +452,6 @@ namespace mem
                           riscv::PteEnum::pte_readable_m | riscv::PteEnum::pte_writable_m | riscv::PteEnum::pte_user_m);
             }
             pa = reinterpret_cast<uint64>(pte.pa());
-            // printf("[copy_out] va: %p, pte: %p, pa: %p\n", va, pte.get_data(), pa);
             if (pa == 0)
                 return -1;
             n = PGSIZE - (va - a);
@@ -479,7 +478,7 @@ namespace mem
         while (len > 0)
         {
             a = PGROUNDDOWN(va);
-           bool alloc = false;
+            bool alloc = false;
             proc::Pcb *proc = proc::k_pm.get_cur_pcb();
             for (int i = 0; i < proc::NVMA; ++i)
             {
@@ -507,7 +506,7 @@ namespace mem
                 }
                 k_pmm.clear_page(mem);
                 map_pages(pt, a, PGSIZE, (uint64)mem,
-                          PTE_U | PTE_W | PTE_MAT |  PTE_D );
+                          PTE_U | PTE_W | PTE_MAT | PTE_D);
             }
             pa = reinterpret_cast<uint64>(pte.pa());
             if (pa == 0)
@@ -539,7 +538,8 @@ namespace mem
         for (a = va; a < va + npages * PGSIZE; a += PGSIZE)
         {
             if ((pte = pt.walk(a, 0)).is_null())
-                panic("vmunmap: walk");
+                continue;
+            // panic("vmunmap: walk");
             if (!pte.is_valid())
                 continue;
             ///@brief 这里的逻辑是，如果pte无效，则不需要释放物理页
@@ -854,6 +854,47 @@ namespace mem
         {
             memmove(mem, (void *)((uint64)src + 2 * PGSIZE), MIN(sz - 2 * PGSIZE, PGSIZE));
         }
+        mem = (char *)k_pmm.alloc_page();
+        memset(mem, 0, PGSIZE);
+        map_pages(pt, 3 * PGSIZE, PGSIZE, (uint64)mem, PTE_V | PTE_W | PTE_R | PTE_X | PTE_MAT | PTE_PLV | PTE_D | PTE_P);
+        if (sz > 3 * PGSIZE)
+        {
+            memmove(mem, (void *)((uint64)src + 3 * PGSIZE), MIN(sz - 3 * PGSIZE, PGSIZE));
+        }
+        mem = (char *)k_pmm.alloc_page();
+        memset(mem, 0, PGSIZE);
+        map_pages(pt, 4 * PGSIZE, PGSIZE, (uint64)mem, PTE_V | PTE_W | PTE_R | PTE_X | PTE_MAT | PTE_PLV | PTE_D | PTE_P);
+        if (sz > 4 * PGSIZE)
+        {
+            memmove(mem, (void *)((uint64)src + 4 * PGSIZE), MIN(sz - 4 * PGSIZE, PGSIZE));
+        }
+        mem = (char *)k_pmm.alloc_page();
+        memset(mem, 0, PGSIZE);
+        map_pages(pt, 5 * PGSIZE, PGSIZE, (uint64)mem, PTE_V | PTE_W | PTE_R | PTE_X | PTE_MAT | PTE_PLV | PTE_D | PTE_P);
+        if (sz > 5 * PGSIZE)
+        {
+            memmove(mem, (void *)((uint64)src + 5 * PGSIZE), MIN(sz - 5 * PGSIZE, PGSIZE));
+        }
+        mem = (char *)k_pmm.alloc_page();
+        memset(mem, 0, PGSIZE);
+        map_pages(pt, 6 * PGSIZE, PGSIZE, (uint64)mem, PTE_V | PTE_W | PTE_R | PTE_X | PTE_MAT | PTE_PLV | PTE_D | PTE_P);
+        if (sz > 6 * PGSIZE)
+        {
+            memmove(mem, (void *)((uint64)src + 6 * PGSIZE), MIN(sz - 6 * PGSIZE, PGSIZE));
+        }
+
+        mem = (char *)k_pmm.alloc_page();
+        memset(mem, 0, PGSIZE);
+        map_pages(pt, 7 * PGSIZE, PGSIZE, (uint64)mem, PTE_V | PTE_W | PTE_R | PTE_X | PTE_MAT | PTE_PLV | PTE_D | PTE_P);
+        if (sz > 7 * PGSIZE)
+        {
+            memmove(mem, (void *)((uint64)src + 7 * PGSIZE), MIN(sz - 7 * PGSIZE, PGSIZE));
+        }
+        if (sz > 4 * PGSIZE)
+        {
+            panic("[vmm] uvmfirst: sz > 4*PGSIZE, this is not supported yet");
+        }
+
 #endif
     }
 

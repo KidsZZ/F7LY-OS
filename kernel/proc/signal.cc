@@ -249,10 +249,7 @@ namespace proc
                 frame->tf = *(p->_trapframe);
 #ifdef RISCV
                 p->_trapframe->ra = (uint64)(SIG_TRAMPOLINE + ((uint64)sig_handler - (uint64)sig_trampoline));
-                // printfRed("[do_handle] sig trampoline: %p, sig handler: %p, sig trampoline: %p\n", SIG_TRAMPOLINE, sig_handler, sig_trampoline);
-                // printf("[do handle] trampoline: %p\n", TRAMPOLINE);
 #elif LOONGARCH
-                panic("sig trampoline not implemented for loongarch");
                 p->_trapframe->ra = (uint64)SIG_TRAMPOLINE;
                 printf("sig: %p\n", SIG_TRAMPOLINE);
 #endif
@@ -342,8 +339,8 @@ namespace proc
                 else
                 {
                     // 原有的单参数处理逻辑
-                    p->_trapframe->sp -= PGSIZE;
-                    p->_trapframe->a0 = signum;
+                p->_trapframe->sp -= PGSIZE;
+                p->_trapframe->a0 = signum;
                 }
 
 #ifdef RISCV
@@ -373,7 +370,6 @@ namespace proc
 
             void sig_return()
             {
-                printf("[sig_return] Entered sig_return\n");
                 Pcb *p = proc::k_pm.get_cur_pcb();
                 uint64 user_sp = p->_trapframe->sp;
                 uint64 guardcheck;
@@ -397,16 +393,16 @@ namespace proc
                 if (has_siginfo != UINT64_MAX)
                 {
                     if (p->sig_frame == nullptr)
-                    {
-                        panic("[sig_return] No signal frame to return to");
-                        p->_killed = true; // 没有信号帧，直接标记为被kill
-                        return;
-                    }
-                    signal_frame *frame = p->sig_frame;
-                    p->_sigmask = frame->mask.sig[0];                        // 恢复信号掩码
-                    memmove(p->_trapframe, &(frame->tf), sizeof(TrapFrame)); // 恢复陷阱帧
-                    p->sig_frame = frame->next;                              // 移除当前信号帧
-                    mem::k_pmm.free_page(frame);                             // 释放信号帧内存
+                {
+                    panic("[sig_return] No signal frame to return to");
+                    p->_killed = true; // 没有信号帧，直接标记为被kill
+                    return;
+                }
+                signal_frame *frame = p->sig_frame;
+                p->_sigmask = frame->mask.sig[0];                        // 恢复信号掩码
+                memmove(p->_trapframe, &(frame->tf), sizeof(TrapFrame)); // 恢复陷阱帧
+                p->sig_frame = frame->next;                              // 移除当前信号帧
+                mem::k_pmm.free_page(frame);                             // 释放信号帧内存
                 }
                 else
                 {
