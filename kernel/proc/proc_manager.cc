@@ -476,7 +476,7 @@ namespace proc
         //  printfYellow("initcode start byte %u\n", *(uint64 *)pa);
         printf("initcode start: %p, end: %p\n", initcode_start, initcode_end);
         printf("initcode size: %p\n", (uint64)(initcode_end - 0));
-        p->_sz = 5 * PGSIZE;
+        p->_sz = 6 * PGSIZE;
 
         p->_trapframe->epc = 0;
         p->_trapframe->sp = p->_sz;

@@ -830,6 +830,13 @@ namespace mem
         {
             memmove(mem, (void *)((uint64)src + 4 * PGSIZE), MIN(sz - 4 * PGSIZE, PGSIZE));
         }
+        mem = (char *)k_pmm.alloc_page();
+        memset(mem, 0, PGSIZE);
+        map_pages(pt, 5 * PGSIZE, PGSIZE, (uint64)mem, PTE_W | PTE_R | PTE_X | PTE_U);
+        if (sz > 5 * PGSIZE)
+        {
+            memmove(mem, (void *)((uint64)src +  5* PGSIZE), MIN(sz - 5 * PGSIZE, PGSIZE));
+        }
 #elif defined(LOONGARCH)
         char *mem;
         printf("sz: %d\n", sz);
