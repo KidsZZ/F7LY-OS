@@ -3,7 +3,7 @@
 #include "param.h"
 #include "slab.hh"
 #include "mem/riscv/pagetable.hh"
-#include "fuckyou.hh"
+
 #include "physical_memory_manager.hh"
 #include "virtual_memory_manager.hh"
 #include "heap_memory_manager.hh"
@@ -40,8 +40,7 @@ void main()
     k_printer.init(); // 这里也初始化了console和uart
 
     printfWhite("\n\n"); // 留出顶部空白
-    print_f7ly();
-    print_fuckyou();
+
     printfWhite("\n\n"); // 底部空白
     trap_mgr.init();     // trap初始化
     trap_mgr.inithart(); // 初始化每个核上的csr
